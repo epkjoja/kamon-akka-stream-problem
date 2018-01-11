@@ -22,6 +22,7 @@ object Main extends App with LazyLogging {
 
   val stream =
     Source(1 to 100)
+      // Adding throttle will make the propagation work again
       //.throttle(30, 1.second, 1, ThrottleMode.Shaping)
       .via(traceToken)
       .via(asyncFlow)
@@ -33,6 +34,7 @@ object Main extends App with LazyLogging {
   }
 
   def traceToken = Flow[Int].map { i =>
+    // Start a new trace context and set a custom trace token
     Tracer.setCurrentContext(Kamon.tracer.newContext("kamon-context", Some(s"token-$i")))
     checkTraceToken("Init", i)
   }
@@ -45,9 +47,12 @@ object Main extends App with LazyLogging {
 
   def sink: Sink[Int, Future[Done]] = Sink.foreach { i =>
     checkTraceToken("Sink", i)
+    Tracer.currentContext.finish()
+    Tracer.clearCurrentContext
   }
 
   def checkTraceToken(text: String, i: Int): Int = {
+    // Read the trace token and compare it to the correct value
     val token = Tracer.currentContext.token
     if (token != s"token-$i")
       logger.error(s"*** $text *** '$i' doesn't match '$token' !!")
